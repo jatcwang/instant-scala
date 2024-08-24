@@ -14,23 +14,28 @@ in_file_dir=$(dirname "$in_file")
 builddir="$in_file_dir/.scala-build"
 binary_path="$builddir/bin/$in_file_name"
 
-calculate_hash() {
-    sha256sum "$1" | awk '{print $1}'
-}
+    
 
 # Check whether we need to build
 hash_file="$builddir/hash/$in_file_name"
-current_hash=$(calculate_hash "$in_file")
+current_hash=$(sha256sum "$in_file" | cut -f 1 -d " ")
 
-if [ ! -f "$hash_file" ] || [ ! -f "$binary_path" ] || [ "$(cat "$hash_file")" != "$current_hash" ]; then
-    mkdir -p "$(dirname "$hash_file")"
-    echo "$current_hash" > "$hash_file"
+if [ ! -f "$hash_file" ]; then
+    echo "Detected Scala script not yet built (no hash file). Building..." >&2
+    needs_build=true
+elif [ ! -f "$binary_path" ]; then
+    echo "Detected Scala script not yet built (no binary). Building..." >&2
+    needs_build=true
+elif [ "$(cat "$hash_file")" != "$current_hash" ]; then
+    echo "Script file has changed. Rebuilding using scala-cli..." >&2
     needs_build=true
 else
     needs_build=false
 fi
 
 if [ "$needs_build" = true ]; then
+    mkdir -p "$(dirname "$hash_file")"
+    echo "$current_hash" > "$hash_file"
     # Save current working directory
     original_dir=$(pwd)
     
@@ -38,7 +43,7 @@ if [ "$needs_build" = true ]; then
     cd "$in_file_dir"
     
     # Run the scala-cli command
-    scala-cli --power package --native-image "$in_file_name" --graalvm-args "-Ob" -f -o "$binary_path"
+    scala-cli --power package --native-image "$in_file_name" -f -o "$binary_path"
     
     # Return to the original directory
     cd "$original_dir"
