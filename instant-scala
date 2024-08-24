@@ -1,0 +1,53 @@
+#! /bin/bash
+
+set -euo pipefail
+
+# Check if a file name is provided as an argument
+if [ $# -eq 0 ]; then
+    echo "Error: Please provide a file name as an argument."
+    exit 1
+fi
+
+in_file="$1"
+in_file_name=$(basename "$in_file")
+in_file_dir=$(dirname "$in_file")
+builddir="$in_file_dir/.scala-build"
+binary_path="$builddir/bin/$in_file_name"
+
+calculate_hash() {
+    sha256sum "$1" | awk '{print $1}'
+}
+
+# Check whether we need to build
+hash_file="$builddir/hash/$in_file_name"
+current_hash=$(calculate_hash "$in_file")
+
+if [ ! -f "$hash_file" ] || [ ! -f "$binary_path" ] || [ "$(cat "$hash_file")" != "$current_hash" ]; then
+    mkdir -p "$(dirname "$hash_file")"
+    echo "$current_hash" > "$hash_file"
+    needs_build=true
+else
+    needs_build=false
+fi
+
+if [ "$needs_build" = true ]; then
+    # Save current working directory
+    original_dir=$(pwd)
+    
+    # Change to the directory of the input file
+    cd "$in_file_dir"
+    
+    # Run the scala-cli command
+    scala-cli --power package --native-image "$in_file_name" --graalvm-args "-Ob" -f -o "$binary_path"
+    
+    # Return to the original directory
+    cd "$original_dir"
+fi
+
+# Execute the binary with the rest of the arguments
+if [ -x "$binary_path" ]; then
+    "$binary_path" "${@:2}"
+else
+    echo "Error: Binary not found or not executable: $binary_path"
+    exit 1
+fi
